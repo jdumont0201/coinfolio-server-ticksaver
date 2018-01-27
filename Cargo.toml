@@ -1,0 +1,15 @@
+[package]
+name = "importer-websockets"
+version = "0.1.0"
+authors = ["JB Dumont <jbmdumont@gmail.com>"]
+
+[dependencies]
+ws = { version = "*", git = "https://github.com/housleyjk/ws-rs", features =["ssl"]}
+serde_json = "1.0"
+serde_derive = "*"
+clap ="*"
+serde = "*"
+json = "*"
+chrono = "0.4"
+lazy_static = "1.0"
+ansi_term="*"
