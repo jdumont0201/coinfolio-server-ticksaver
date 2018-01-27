@@ -7,6 +7,6 @@ ENV appname server-ticksaver
 ENV datafolder /coinfolio/data
 
 VOLUME ["/coinfolio/data"] 
-RUN mkdir /coinfolio && mkdir /coinfolio/${appname} && mkdir /coinfolio/data
+RUN mkdir -p /coinfolio && mkdir /coinfolio/${appname} && mkdir -p /coinfolio/data
 ADD target/release/server-ticksaver /coinfolio/${appname}
 CMD exec /coinfolio/${appname}/server-ticksaver ${datafolder}
