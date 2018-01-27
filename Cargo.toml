@@ -1,5 +1,5 @@
 [package]
-name = "importer-websockets"
+name = "server-ticksaver"
 version = "0.1.0"
 authors = ["JB Dumont <jbmdumont@gmail.com>"]
 
