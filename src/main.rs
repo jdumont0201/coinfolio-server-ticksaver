@@ -28,8 +28,6 @@ use chrono::{DateTime, TimeZone, NaiveDateTime, Utc};
 //use chrono::{NaiveDate, NaiveTime};
 
 mod broker {
-    //use std::io::Write;
-    //use std::fs::OpenOptions;
     use super::Client;
     use std::env;
     use std::str;
@@ -456,6 +454,7 @@ impl Handler for Client {
 }
 
 fn main() {
+    println!("Coinamics Server Websockets");
     let mut children = vec![];
     //let pairs = vec!["ETHUSDT","BTCUSDT","BNBUSDT","NEOUSDT","LTCUSDT","BBCUSDT"];
     static PAIRS: &'static [&str] = &["ETHBTC" /*, "LTCBTC", "BNBBTC", "NEOBTC", "123456", "QTUMETH", "EOSETH", "SNTETH", "BNTETH", "BCCBTC",
@@ -511,7 +510,9 @@ fn main() {
     let count = Rc::new(Cell::new(0));
     let client_data = v.clone();
 
+    println!("Starting pair threads");
     for p in PAIRS.iter() {
+        println!("Starting pair thread {}",p);
         let pp = p.clone();
         let data_inner = data.clone();
         children.push(thread::spawn(move || {
