@@ -12,6 +12,7 @@ VOLUME ["/coinfolio/data"]
 RUN mkdir -p /coinfolio && mkdir /coinfolio/${appname} && mkdir -p /coinfolio/data
 ADD target/release/server-ticksaver /coinfolio/${appname}
 ADD Cargo.toml /coinfolio/${appname}/
+ADD src /coinfolio/${appname}/
 RUN cd /coinfolio/${appname}
 RUN cargo install
 RUN cargo run --features ssl --example cli wss://ws-feed.exchange.coinbase.com/
