@@ -429,18 +429,19 @@ impl Handler for Client {
         self.out.send("Hello WebSocket")
     }
     fn on_error(&mut self, err: ws::Error) {
-        println!("err {}", err);
+        println!("err kind{:?}", err.kind);
+            println!("err {}", err);
+
     }
     fn on_response(&mut self, _res: &Response) -> Result<()> {
+
         self.out.send("Hello WebSocket res")
     }
     fn on_message(&mut self, msg: Message) -> Result<()> {
         let m = msg.as_text().unwrap();
         let mut v: broker::ParsedBrokerMessage = serde_json::from_str(m).unwrap();
-//parse for later addition
+        //parse for later addition
         let vol = v.k.v.parse::<f64>().unwrap();
-        //self.volume_1m = self.volume_1m + vol;
-
 
         let tick = v.get_tick();
         self.check_change_bufwriter_name();

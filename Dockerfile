@@ -12,4 +12,5 @@ RUN mkdir -p /coinfolio && mkdir /coinfolio/${appname} && mkdir -p /coinfolio/da
 ADD target/release/server-ticksaver /coinfolio/${appname}
 RUN chmod 777 /coinfolio/${appname}/server-ticksaver
 RUN chmod 777 -R ${datafolder}
+RUN ulimit -n 2048
 CMD exec /coinfolio/${appname}/server-ticksaver ${datafolder}
