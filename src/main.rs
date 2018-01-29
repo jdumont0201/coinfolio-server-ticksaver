@@ -14,19 +14,12 @@ extern crate serde_derive;
 extern crate chrono;
 
 
-use ansi_term::Colour::*;
 use std::sync::{Arc, Mutex};
 use std::rc::Rc;
 use std::cell::Cell;
-use std::io::{self};
 use futures::{Future, Stream};
-use tokio_core::reactor::Core;
-use hyper::header::{ContentLength, ContentType};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Write;
-use std::fs::OpenOptions;
-use std::io::BufWriter;
 use ws::{connect, Handler, Sender, Handshake, Result, Message, CloseCode, Response};
 use std::thread;
 use chrono::prelude::*;
@@ -36,10 +29,6 @@ static WRITE_ON_DISK: bool = false;
 static SEND_TO_DB: bool = true;
 
 mod broker {
-    use super::Client;
-    use std::env;
-    use std::str;
-    use std::str::FromStr;
 
 
     pub fn get_url(pair: String) -> String {
@@ -174,7 +163,7 @@ impl GenericOHLC {
 
 pub struct Client {
     out: Sender,
-    writer: Option<BufWriter<File>>,
+    //writer: Option<BufWriter<File>>,
     name: String,
     broker: String,
 
@@ -229,7 +218,7 @@ impl Client {
         if ohlc.ts != self.current_ts {
             println!("[{}] ohlc_1m {} {} {}", self.name, ohlc.ts, self.current_ts, ohlc.ts - self.current_ts);
             let diff = ohlc.ts - self.current_ts;
-            if (diff == 60000 || self.current_ts == 0) {} else {
+            if diff == 60000 || self.current_ts == 0 {} else {
                 println!("  !!! Missing tick !!! ")
             }
             self.old_ts = self.current_ts;
@@ -299,7 +288,9 @@ fn getPairsFromArgs() -> Vec<Pair>{
     let mut PAIRS:Vec<Pair>=Vec::new();
     let pairssp:Vec<&str>=pairs.split(",").collect();
     for  p in &pairssp{
+
         let ppp:Vec<&str>=p.split(":").collect();
+        if ppp.len() != 2 { println!("wrong format {}",p);}
         PAIRS.push(Pair {name:ppp[1].to_string(),broker:ppp[0].to_string()})
     }
     PAIRS
@@ -344,22 +335,16 @@ fn main() {
                 name: pp.to_string(),
                 broker: bb.to_string(),
                 path_tick: "".to_string(),
-
                 buffer_level: 0,
                 buffer_max: 20,
                 textbuffer: "[".to_string(),
-
                 ohlc_1m_buffer_level: 0,
                 ohlc_1m_buffer_max: 20,
                 ohlc_1m_textbuffer:"[".to_string(),
-
                 current_ts: 0,
                 old_ts: 0,
-
                 client: client.clone(),
-
-                writer: None,
-
+ //               writer: None,
                 last_today_str: " ".to_string(),
             }){
                 println!("[{}] Connect error {:?}",pp,err);
