@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y libssl-dev pkg-config ca-certificates
 
 ENV appname server-ticksaver
 ENV datafolder /coinfolio/data
-ENV PAIRS /coinfolio/data
+
 
 
 
