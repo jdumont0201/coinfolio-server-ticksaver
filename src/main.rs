@@ -4,6 +4,10 @@ extern crate serde_json;
 extern crate json;
 extern crate clap;
 extern crate ansi_term;
+extern crate futures;
+extern crate hyper;
+extern crate tokio_core;
+extern crate reqwest;
 
 use ansi_term::Colour::*;
 //use clap::{Arg, App, SubCommand};
@@ -16,6 +20,11 @@ use std::cell::Cell;
 extern crate serde_derive;
 extern crate chrono;
 
+use std::io::{self};
+use futures::{Future, Stream};
+
+use tokio_core::reactor::Core;
+use hyper::header::{ContentLength, ContentType};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -27,6 +36,9 @@ use chrono::prelude::*;
 use chrono::{DateTime, TimeZone, NaiveDateTime, Utc};
 //use chrono::{NaiveDate, NaiveTime};
 
+
+static WRITE_ON_DISK:bool=false;
+static SEND_TO_DB:bool=true;
 mod broker {
     use super::Client;
     use std::env;
@@ -100,11 +112,11 @@ fn parsef64(i: &String) -> f64 {
     i.parse::<f64>().unwrap()
 }
 
-fn concat(path: &str, file: &str) -> String {
+fn concat(a: &str, b: &str) -> String {
     let mut owned_str: String = "".to_owned();
-    owned_str.push_str(path);
-    owned_str.push_str(file);
-    owned_str.push_str(".csv");
+    owned_str.push_str(a);
+    owned_str.push_str(b);
+    //owned_str.push_str(".csv");
     owned_str
 }
 
@@ -126,7 +138,13 @@ impl GenericTick {
         owned_str.push_str("\n");
         owned_str
     }
+    fn to_json(&self, broker: &str, pair: &str) -> String {
+        let ts = chrono::Utc.timestamp(self.ts / 1000, 0).format("%Y-%m-%d %H:%M:%S");
+        let s = format!(r#"{{"ts" :"{}","pair"  :"{}","close" :"{}","volume":"{}"}}"#, ts, pair, self.p, self.v);
+        s
+    }
 }
+
 pub struct GenericOHLC {
     ts: i64,
     o: f64,
@@ -135,7 +153,13 @@ pub struct GenericOHLC {
     l: f64,
     v: f64,
 }
+
 impl GenericOHLC {
+    fn to_json(&self, broker: &str, pair: &str) -> String {
+        let ts = chrono::Utc.timestamp(self.ts / 1000, 0).format("%Y-%m-%d %H:%M:%S");
+        let s = format!(r#"{{"ts" :"{}","pair"  :"{}","open"  :"{}","high"  :"{}","low":"{}","close":"{}","volume":"{}"}}"#, ts, pair, self.o, self.h, self.l, self.c, self.v);
+        s
+    }
     fn to_string(&self) -> String {
         let mut owned_str: String = "".to_owned();
         owned_str.push_str(&(self.ts.to_string()).to_owned());
@@ -158,9 +182,13 @@ pub struct Client {
     out: Sender,
     writer: Option<BufWriter<File>>,
     name: String,
+    broker: String,
+
     buffer_level: u8,
     buffer_max: u8,
+    textbuffer: String,
 
+    client: reqwest::Client,
     last_today_str: String,
     path_tick: String,
 
@@ -168,21 +196,22 @@ pub struct Client {
     old_ts: i64,
 
     path_1m: String,
-
     path_5m: String,
 
     last_bars_5: std::vec::Vec<GenericOHLC>,
     last_bar_5_position: usize,
+
     bar_5m: GenericOHLC,
     bar_15m: GenericOHLC,
     bar_30m: GenericOHLC,
 }
+
 impl Client {
-    fn get_path(&mut self,broker_name: &str,  interval: &str) -> String {
-        let symbol=&self.name;
+    fn get_path(&mut self, broker_name: &str, interval: &str) -> String {
+        let symbol = &self.name;
         let args: Vec<_> = ::std::env::args().collect();
         let base_dir_name = &args[1];
-        println!("[{}] Data folder: {}/{}/{}/{}", symbol, base_dir_name, broker_name,symbol,interval);
+        println!("[{}] Data folder: {}/{}/{}/{}", symbol, base_dir_name, broker_name, symbol, interval);
 
         let mut dir_name = base_dir_name.to_owned();
         dir_name.push_str("/");
@@ -196,7 +225,7 @@ impl Client {
         //create directory
         let exists = std::path::Path::new(&dir_name).exists();
         if exists {
-            println!("  File {} exists",dir_name);
+            println!("  File {} exists", dir_name);
         } else {
             println!("  File {} not exising", dir_name);
             let path = std::path::Path::new(&dir_name);
@@ -211,9 +240,9 @@ impl Client {
         dir_name
     }
     fn set_paths(&mut self) {
-        self.path_tick = self.get_path("binance",  "tick");
-        self.path_1m = self.get_path("binance",  "1m");
-        self.path_5m = self.get_path("binance",  "5m");
+        self.path_tick = self.get_path("binance", "tick");
+        self.path_1m = self.get_path("binance", "1m");
+        self.path_5m = self.get_path("binance", "5m");
         println!("Save path {}", &self.path_tick);
     }
     pub fn update_interval_bar(&mut self, ohlc: &GenericOHLC, interval: u32) {
@@ -224,7 +253,7 @@ impl Client {
         let min = dt.minute();
         let rem = min % interval;
 
-        println!("[{}] Collecting 5 min bar in pos {}", self.name,self.last_bar_5_position);
+        println!("[{}] Collecting 5 min bar in pos {}", self.name, self.last_bar_5_position);
         self.last_bars_5[self.last_bar_5_position] = GenericOHLC {
             ts: ohlc.ts,
             o: ohlc.o,
@@ -235,33 +264,56 @@ impl Client {
         };
 
         if rem == interval - 1 { //time to save
-            println!("[{}] Time to save 5m bar : {} {} {} {}",self.name, ts, dt, min, rem);
+            println!("[{}] Time to save 5m bar : {} {} {} {}", self.name, ts, dt, min, rem);
             let ohlc = self.generate_5m_bar(5);
             if let Some(ohlc_) = ohlc {
-
                 let filename = ::chrono::Utc::now().format("%Y%m%d").to_string();
-                let path=concat(&self.path_5m,&filename);
+                let path = concat(&self.path_5m, &filename);
                 self.save_interval_bar(&ohlc_, &path);
-            }else{
-                println!("[{}] 5m bar has empty ",self.name);
+            } else {
+                println!("[{}] 5m bar has empty ", self.name);
             }
-
         }
         self.last_bar_5_position = (self.last_bar_5_position + 1) % 5;
     }
     fn save_tick(&mut self, tick: &GenericTick) {
         self.write_tick_in_buffer(tick);
+
+        let mut doSend = false;
         self.buffer_level = self.buffer_level + 1;
         if self.is_buffer_full() {
-            match self.writer {
-                Some(ref mut w) => {
-                    //write in buffer
-                    println!("[{}] writing {} ticks from buffer", self.name ,self.buffer_max);
-                    w.flush().unwrap();
-                    self.buffer_level = 0;
-                }
-                None => {
-                    println!("created buffer not exisitgng");
+            doSend = true;
+            self.buffer_level = 0;
+        } else {
+            self.textbuffer = concat(&self.textbuffer, ",");
+        }
+
+
+        if doSend {
+            //send request post
+            let json = concat(&self.textbuffer, &"]".to_string());
+            let uri = format!("http://0.0.0.0:3000/{}_tick", self.broker);
+            println!("[POST] ticks {}", json);
+            if let Ok(mut res) = self.client.post(&uri).body(json).send() {
+                println!("[POST] ok req status {} {}", res.status(), res.text().unwrap());
+                self.textbuffer = "[".to_string();
+            } else {
+                println!("[POST] nok uri");
+            }
+
+            if(WRITE_ON_DISK) {
+                //write on disk
+                match self.writer {
+                    Some(ref mut w) => {
+                        //write in buffer
+                        println!("[{}] writing {} ticks from buffer", self.name, self.buffer_max);
+                        w.flush().unwrap();
+
+                        self.buffer_level = 0;
+                    }
+                    None => {
+                        println!("created buffer not exisitgng");
+                    }
                 }
             }
         }
@@ -306,7 +358,7 @@ impl Client {
 
     fn save_1m(&mut self, mut ohlc: &GenericOHLC) {
         if ohlc.ts != self.current_ts {
-            println!("[{}] new tick {} {} {}",self.name, ohlc.ts, self.current_ts, ohlc.ts - self.current_ts);
+            println!("[{}] new tick {} {} {}", self.name, ohlc.ts, self.current_ts, ohlc.ts - self.current_ts);
             let diff = ohlc.ts - self.current_ts;
             if (diff == 60000 || self.current_ts == 0) {} else {
                 println!("  !!! Missing tick !!! ")
@@ -316,24 +368,40 @@ impl Client {
         } else {
             println!("same tick")
         }
-        self.update_interval_bar(ohlc, 5);
 
 
+
+        if(WRITE_ON_DISK){
+            self.update_interval_bar(ohlc, 5);
+        //save in file
         let filename = ::chrono::Utc::now().format("%Y%m%d").to_string();
         let path = ::concat(&self.path_1m, &filename);
-        println!("[{}]  ->  save 1m in {}", self.name,&path);
+        println!("[{}]  ->  save 1m in {}", self.name, &path);
         let file = OpenOptions::new().write(true).create(true).append(true).open(path);
         let content_1m = ohlc.to_string();
         if let Ok(mut filed) = file {
-            println!("[{}] File ok",self.name);
+            println!("[{}] File ok", self.name);
             let mut s = content_1m.as_bytes();
             filed.write_all(s).unwrap();
         } else {
-            println!("[{}] {} ",self.name,Red.paint("Cannot save 1m"));
+            println!("[{}] {} ", self.name, Red.paint("Cannot save 1m"));
+        }
+        }
+
+        //send request post
+        let json = ohlc.to_json("BIN", &self.name);
+        let uri = format!("http://0.0.0.0:3000/{}_ohlc_1m", self.broker);
+        if let Ok(mut res) = self.client.post(&uri).body(json).send() {
+            println!("[POST] ok req status {} {}", res.status(), res.text().unwrap());
+        } else {
+            println!("[POST] nok uri");
         }
     }
 
     fn write_tick_in_buffer(&mut self, tick: &GenericTick) {
+        self.textbuffer = concat(&self.textbuffer, &tick.to_json(&self.broker, &self.name));
+
+        if(WRITE_ON_DISK){
         match self.writer {
             Some(ref mut w) => {
                 let mut owned_str = tick.to_string();
@@ -341,10 +409,11 @@ impl Client {
             }
             None => {}
         }
+        }
     }
 
     pub fn save_interval_bar(&mut self, mut ohlc: &GenericOHLC, path: &String) {
-        println!("[{}]  ->  save 5m in {}", self.name,path);
+        println!("[{}]  ->  save 5m in {}", self.name, path);
         let file = OpenOptions::new().write(true).create(true).append(true).open(path);
         let content = ohlc.to_string();
 
@@ -356,7 +425,7 @@ impl Client {
 
     fn generate_5m_bar(&mut self, size: usize) -> Option<GenericOHLC> {
         let last = self.last_bar_5_position;
-        let first=(last+1) % size;
+        let first = (last + 1) % size;
         let ts: i64 = self.last_bars_5.get(first).unwrap().ts;
         let o: f64 = self.last_bars_5.get(first).unwrap().o;
         let mut h: f64 = -1000000000.;
@@ -364,7 +433,7 @@ impl Client {
         let c: f64 = self.last_bars_5.get(last).unwrap().c;
         let mut v: f64 = 0.;
 
-        let mut hasEmpty=false;
+        let mut hasEmpty = false;
         for i in 0..size {
             let bar = self.last_bars_5.get(i).unwrap();
             if h < bar.h {
@@ -374,16 +443,15 @@ impl Client {
                 l = bar.l;
             }
             if bar.c < 0.0000000001 {
-                hasEmpty=true;
+                hasEmpty = true;
             }
             v = v + self.last_bars_5.get(i).unwrap().v;
         }
-        if hasEmpty{
+        if hasEmpty {
             None
-        }else{
+        } else {
             Some(GenericOHLC { ts: ts, o: o, h: h, l: l, c: c, v: v })
         }
-
     }
 
     fn check_change_bufwriter_name(&mut self) {
@@ -425,16 +493,16 @@ impl Handler for Client {
         for i in 0..5 {
             self.last_bars_5.push(GenericOHLC { ts: 0, o: 0., h: 0., l: 0., c: 0., v: 0. });
         }
-        self.reset_tick_buffer();
+        if(WRITE_ON_DISK){
+            self.reset_tick_buffer();
+        }
         self.out.send("Hello WebSocket")
     }
     fn on_error(&mut self, err: ws::Error) {
         println!("err kind{:?}", err.kind);
-            println!("err {}", err);
-
+        println!("err {}", err);
     }
     fn on_response(&mut self, _res: &Response) -> Result<()> {
-
         self.out.send("Hello WebSocket res")
     }
     fn on_message(&mut self, msg: Message) -> Result<()> {
@@ -444,7 +512,11 @@ impl Handler for Client {
         let vol = v.k.v.parse::<f64>().unwrap();
 
         let tick = v.get_tick();
-        self.check_change_bufwriter_name();
+
+        if(WRITE_ON_DISK){
+            self.check_change_bufwriter_name();
+        }
+
         self.save_tick(&tick);
         if v.k.x {//isfinal
             let mut ohlc = v.get_generic_OHLC();
@@ -458,7 +530,7 @@ fn main() {
     println!("Coinamics Server Websockets");
     let mut children = vec![];
     //let pairs = vec!["ETHUSDT","BTCUSDT","BNBUSDT","NEOUSDT","LTCUSDT","BBCUSDT"];
-    static PAIRS: &'static [&str] = &["ETHBTC" /*, "LTCBTC", "BNBBTC", "NEOBTC", "123456", "QTUMETH", "EOSETH", "SNTETH", "BNTETH", "BCCBTC",
+    static PAIRS: &'static [&str] = &["ETHBTC" , "LTCBTC", "BNBBTC", "NEOBTC", "123456", "QTUMETH", "EOSETH", "SNTETH", "BNTETH", "BCCBTC",
      "GASBTC", "BNBETH", "BTCUSDT", "ETHUSDT", "HSRBTC", "OAXETH", "DNTETH", "MCOETH", "ICNETH", "MCOBTC",
       "WTCBTC", "WTCETH", "LRCBTC", "LRCETH", "QTUMBTC", "YOYOBTC", "OMGBTC", "OMGETH", "ZRXBTC", "ZRXETH",
       "STRATBTC", "STRATETH", "SNGLSBTC", "SNGLSETH", "BQXBTC", "BQXETH", "KNCBTC", "KNCETH", "FUNBTC",
@@ -488,9 +560,9 @@ fn main() {
       "OSTETH", "OSTBNB", "ELFBTC", "ELFETH", "AIONBTC", "AIONETH", "AIONBNB", "NEBLBTC",
       "NEBLETH", "NEBLBNB", "BRDBTC", "BRDETH", "BRDBNB", "MCOBNB", "EDOBTC", "EDOETH",
 
-  ,                   "WINGSBTC", "WINGSETH", "NAVBTC", "NAVETH", "NAVBNB", "LUNBTC", "LUNETH", "TRIGBTC",
+                     "WINGSBTC", "WINGSETH", "NAVBTC", "NAVETH", "NAVBNB", "LUNBTC", "LUNETH", "TRIGBTC",
                      "TRIGETH", "TRIGBNB", "APPCBTC", "APPCETH", "APPCBNB", "VIBEBTC", "VIBEETH", "RLCBTC",
-                     "RLCETH", "RLCBNB", "INSBTC", "INSETH", "PIVXBTC", "PIVXETH", "PIVXBNB", "IOSTBTC", "IOSTETH"*/
+                     "RLCETH", "RLCBNB", "INSBTC", "INSETH", "PIVXBTC", "PIVXETH", "PIVXBNB", "IOSTBTC", "IOSTETH"
     ];
 //let pairs = vec!["ETHUSDT"];
 
@@ -513,34 +585,43 @@ fn main() {
 
     println!("Starting pair threads");
     for p in PAIRS.iter() {
-        println!("Starting pair thread {}",p);
+        println!("Starting pair thread {}", p);
         let pp = p.clone();
+        let bb = "bin";
         let data_inner = data.clone();
         children.push(thread::spawn(move || {
             let url = broker::get_url(pp.to_string());
+
+
+            let client = reqwest::Client::new();
+
+
             println!("Launching thread {} {}", pp.to_string(), url);
             connect(url, |out| Client {
                 out: out,
                 name: pp.to_string(),
+                broker: bb.to_string(),
                 path_tick: "".to_string(),
 
                 buffer_level: 0,
                 buffer_max: 20,
+                textbuffer: "[".to_string(),
                 current_ts: 0,
                 old_ts: 0,
+
+                client: client.clone(),
                 path_1m: "".to_string(),
                 path_5m: "".to_string(),
 
-//count: count.clone(),
                 writer: None,
+
                 last_today_str: " ".to_string(),
                 last_bar_5_position: 0,
                 last_bars_5: Vec::new(),
+
                 bar_5m: GenericOHLC { ts: 0, o: 0., h: 0., l: 0., c: 0., v: 0. },
                 bar_15m: GenericOHLC { ts: 0, o: 0., h: 0., l: 0., c: 0., v: 0. },
                 bar_30m: GenericOHLC { ts: 0, o: 0., h: 0., l: 0., c: 0., v: 0. },
-//data: client_data.clone(),
-//nbUpdated:*daa
             }).unwrap();
         }));
     }
