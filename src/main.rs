@@ -284,6 +284,7 @@ fn getPairsFromArgs() -> Vec<Pair>{
     }else{
         pairs="bin:ETHUSDT".to_string()
     }
+    println!("ENV PAIRS {}",pairs);
 
     let mut PAIRS:Vec<Pair>=Vec::new();
     let pairssp:Vec<&str>=pairs.split(",").collect();
