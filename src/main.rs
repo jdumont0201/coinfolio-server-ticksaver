@@ -277,6 +277,13 @@ impl Handler for Client {
     fn on_response(&mut self, _res: &Response) -> Result<()> {
         self.out.send("Hello WebSocket res")
     }
+    fn on_timeout(&mut self, event: ws::util::Token) -> Result<()> {
+        println!("timeout ");
+        Ok(())
+    }
+    fn on_shutdown(&mut self)  {
+        println!("shutdown");
+    }
     fn on_message(&mut self, msg: Message) -> Result<()> {
         let m = msg.as_text().unwrap();
         let mut v: broker::ParsedBrokerMessage = serde_json::from_str(m).unwrap();
@@ -294,7 +301,7 @@ fn main() {
     println!("Coinamics Server Websockets");
     let mut children = vec![];
     //let pairs = vec!["ETHUSDT","BTCUSDT","BNBUSDT","NEOUSDT","LTCUSDT","BBCUSDT"];
-    static PAIRS: &'static [&str] = &["ETHBTC"/*, "LTCBTC", "BNBBTC", "NEOBTC", "123456", "QTUMETH", "EOSETH", "SNTETH", "BNTETH", "BCCBTC",
+    static PAIRS: &'static [&str] = &["ETHBTC", "LTCBTC", "BNBBTC", "NEOBTC", "123456", "QTUMETH", "EOSETH", "SNTETH", "BNTETH", "BCCBTC",
         "GASBTC", "BNBETH", "BTCUSDT", "ETHUSDT", "HSRBTC", "OAXETH", "DNTETH", "MCOETH", "ICNETH", "MCOBTC",
         "WTCBTC", "WTCETH", "LRCBTC", "LRCETH", "QTUMBTC", "YOYOBTC", "OMGBTC", "OMGETH", "ZRXBTC", "ZRXETH",
         "STRATBTC", "STRATETH", "SNGLSBTC", "SNGLSETH", "BQXBTC", "BQXETH", "KNCBTC", "KNCETH", "FUNBTC",
@@ -322,7 +329,7 @@ fn main() {
         "NEBLETH", "NEBLBNB", "BRDBTC", "BRDETH", "BRDBNB", "MCOBNB", "EDOBTC", "EDOETH",
         "WINGSBTC", "WINGSETH", "NAVBTC", "NAVETH", "NAVBNB", "LUNBTC", "LUNETH", "TRIGBTC",
         "TRIGETH", "TRIGBNB", "APPCBTC", "APPCETH", "APPCBNB", "VIBEBTC", "VIBEETH", "RLCBTC",
-        "RLCETH", "RLCBNB", "INSBTC", "INSETH", "PIVXBTC", "PIVXETH", "PIVXBNB", "IOSTBTC", "IOSTETH"*/
+        "RLCETH", "RLCBNB", "INSBTC", "INSETH", "PIVXBTC", "PIVXETH", "PIVXBNB", "IOSTBTC", "IOSTETH"
     ];
 
     let nb = PAIRS.len();
@@ -352,7 +359,7 @@ fn main() {
             let url = broker::get_url(pp.to_string());
             let client = reqwest::Client::new();
             println!("Launching thread {} {}", pp.to_string(), url);
-            connect(url, |out| Client {
+            if let Err(err)= connect(url, |out| Client {
                 out: out,
                 name: pp.to_string(),
                 broker: bb.to_string(),
@@ -382,7 +389,10 @@ fn main() {
                 bar_5m: GenericOHLC { ts: 0, o: 0., h: 0., l: 0., c: 0., v: 0. },
                 bar_15m: GenericOHLC { ts: 0, o: 0., h: 0., l: 0., c: 0., v: 0. },
                 bar_30m: GenericOHLC { ts: 0, o: 0., h: 0., l: 0., c: 0., v: 0. },
-            }).unwrap();
+            }){
+                println!("Connect errror {:.}",err);
+            };
+
         }));
     }
     for child in children {
