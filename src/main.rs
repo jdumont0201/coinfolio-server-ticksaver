@@ -193,30 +193,22 @@ pub struct Client {
     current_ts: i64,
     old_ts: i64,
 
-    path_1m: String,
-    path_5m: String,
 
-    last_bars_5: std::vec::Vec<GenericOHLC>,
-    last_bar_5_position: usize,
-
-    bar_5m: GenericOHLC,
-    bar_15m: GenericOHLC,
-    bar_30m: GenericOHLC,
 }
 
 impl Client {
     fn save_tick(&mut self, tick: &GenericTick) {
         self.write_tick_in_buffer(tick);
 
-        let mut doSend = false;
+        let mut do_send = false;
         self.buffer_level = self.buffer_level + 1;
         if self.is_buffer_full() {
-            doSend = true;
+            do_send = true;
             self.buffer_level = 0;
         } else {
             self.textbuffer = concat(&self.textbuffer, ",");
         }
-        if doSend {
+        if do_send {
             let json = concat(&self.textbuffer, &"]".to_string());
             let uri = format!("http://0.0.0.0:3000/{}_tick", self.broker);
             //println!("[POST] ticks {}", json);
@@ -267,7 +259,6 @@ impl Client {
 impl Handler for Client {
     fn on_open(&mut self, _: Handshake) -> Result<()> {
         println!("[{}] Open ws", self.name);
-
         self.out.send("Hello WebSocket")
     }
     fn on_error(&mut self, err: ws::Error) {
@@ -306,7 +297,7 @@ fn main() {
         "WTCBTC", "WTCETH", "LRCBTC", "LRCETH", "QTUMBTC", "YOYOBTC", "OMGBTC", "OMGETH", "ZRXBTC", "ZRXETH",
         "STRATBTC", "STRATETH", "SNGLSBTC", "SNGLSETH", "BQXBTC", "BQXETH", "KNCBTC", "KNCETH", "FUNBTC",
         "FUNETH", "SNMBTC", "SNMETH", "NEOETH", "IOTABTC", "IOTAETH", "LINKBTC", "LINKETH", "XVGBTC"
-
+/*
         , "XVGETH", "CTRBTC", "CTRETH", "SALTBTC", "SALTETH", "MDABTC", "MDAETH", "MTLBTC", "MTLETH",
         "SUBBTC", "SUBETH", "EOSBTC", "SNTBTC", "ETCETH", "ETCBTC", "MTHBTC", "MTHETH", "ENGBTC",
         "ENGETH", "DNTBTC", "ZECBTC", "ZECETH", "BNTBTC", "ASTBTC", "ASTETH", "DASHBTC", "DASHETH",
@@ -329,7 +320,7 @@ fn main() {
         "NEBLETH", "NEBLBNB", "BRDBTC", "BRDETH", "BRDBNB", "MCOBNB", "EDOBTC", "EDOETH",
         "WINGSBTC", "WINGSETH", "NAVBTC", "NAVETH", "NAVBNB", "LUNBTC", "LUNETH", "TRIGBTC",
         "TRIGETH", "TRIGBNB", "APPCBTC", "APPCETH", "APPCBNB", "VIBEBTC", "VIBEETH", "RLCBTC",
-        "RLCETH", "RLCBNB", "INSBTC", "INSETH", "PIVXBTC", "PIVXETH", "PIVXBNB", "IOSTBTC", "IOSTETH"
+        "RLCETH", "RLCBNB", "INSBTC", "INSETH", "PIVXBTC", "PIVXETH", "PIVXBNB", "IOSTBTC", "IOSTETH"*/
     ];
 
     let nb = PAIRS.len();
@@ -377,20 +368,12 @@ fn main() {
                 old_ts: 0,
 
                 client: client.clone(),
-                path_1m: "".to_string(),
-                path_5m: "".to_string(),
 
                 writer: None,
 
                 last_today_str: " ".to_string(),
-                last_bar_5_position: 0,
-                last_bars_5: Vec::new(),
-
-                bar_5m: GenericOHLC { ts: 0, o: 0., h: 0., l: 0., c: 0., v: 0. },
-                bar_15m: GenericOHLC { ts: 0, o: 0., h: 0., l: 0., c: 0., v: 0. },
-                bar_30m: GenericOHLC { ts: 0, o: 0., h: 0., l: 0., c: 0., v: 0. },
             }){
-                println!("Connect errror {:.}",err);
+                println!("Connect errror {:?}",err);
             };
 
         }));
