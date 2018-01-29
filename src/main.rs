@@ -287,16 +287,20 @@ impl Handler for Client {
         self.out.close(CloseCode::Normal)
     }
 }
-
+struct Pair{
+    name: String,
+    broker :String
+}
 fn main() {
     println!("Coinamics Server Websockets");
+    let args: Vec<String> = std::env::args().collect();
     let mut children = vec![];
     //let pairs = vec!["ETHUSDT","BTCUSDT","BNBUSDT","NEOUSDT","LTCUSDT","BBCUSDT"];
-    static PAIRS: &'static [&str] = &["ETHBTC", "LTCBTC", "BNBBTC", "NEOBTC", "123456", "QTUMETH", "EOSETH", "SNTETH", "BNTETH", "BCCBTC",
+    /*static PAIRS: &'static [&str] = &["ETHBTC", "LTCBTC", "BNBBTC", "NEOBTC", "123456", "QTUMETH", "EOSETH", "SNTETH", "BNTETH", "BCCBTC",
         "GASBTC", "BNBETH", "BTCUSDT", "ETHUSDT", "HSRBTC", "OAXETH", "DNTETH", "MCOETH", "ICNETH", "MCOBTC",
         "WTCBTC", "WTCETH", "LRCBTC", "LRCETH", "QTUMBTC", "YOYOBTC", "OMGBTC", "OMGETH", "ZRXBTC", "ZRXETH",
         "STRATBTC", "STRATETH", "SNGLSBTC", "SNGLSETH", "BQXBTC", "BQXETH", "KNCBTC", "KNCETH", "FUNBTC",
-        "FUNETH", "SNMBTC", "SNMETH", "NEOETH", "IOTABTC", "IOTAETH", "LINKBTC", "LINKETH", "XVGBTC"
+        "FUNETH", "SNMBTC", "SNMETH", "NEOETH", "IOTABTC", "IOTAETH", "LINKBTC", "LINKETH", "XVGBTC"*/
 /*
         , "XVGETH", "CTRBTC", "CTRETH", "SALTBTC", "SALTETH", "MDABTC", "MDAETH", "MTLBTC", "MTLETH",
         "SUBBTC", "SUBETH", "EOSBTC", "SNTBTC", "ETCETH", "ETCBTC", "MTHBTC", "MTHETH", "ENGBTC",
@@ -321,13 +325,31 @@ fn main() {
         "WINGSBTC", "WINGSETH", "NAVBTC", "NAVETH", "NAVBNB", "LUNBTC", "LUNETH", "TRIGBTC",
         "TRIGETH", "TRIGBNB", "APPCBTC", "APPCETH", "APPCBNB", "VIBEBTC", "VIBEETH", "RLCBTC",
         "RLCETH", "RLCBNB", "INSBTC", "INSETH", "PIVXBTC", "PIVXETH", "PIVXBNB", "IOSTBTC", "IOSTETH"*/
-    ];
+    //];
+    //let pairs=&args[1];
 
+    let mut pairs:String;
+
+    if let Ok(val)=  std::env::var("PAIRS") {
+        pairs=val.to_owned();
+
+
+    }else{
+        pairs="bin:ETHUSDT".to_string()
+    }
+
+
+    let mut PAIRS:Vec<Pair>=Vec::new();
+    let pairssp:Vec<&str>=pairs.split(",").collect();
+    for  p in &pairssp{
+        let ppp:Vec<&str>=p.split(":").collect();
+        PAIRS.push(Pair {name:ppp[1].to_string(),broker:ppp[0].to_string()})
+    }
     let nb = PAIRS.len();
 
     let mut c: HashMap<String, usize> = HashMap::new();//Vec::with_capacity(nb);//(0..nb).collect();
     for i in 0..nb {
-        c.insert(PAIRS[i].to_string(), 0);
+        c.insert(PAIRS[i].name.to_string(), 0);
     }
 
 
@@ -342,14 +364,14 @@ fn main() {
 
     println!("Starting pair threads");
     for p in PAIRS.iter() {
-        println!("Starting pair thread {}", p);
-        let pp = p.clone();
-        let bb = "bin";
+        println!("[{}/{}] Starting thread", p.broker ,p.name);
+        let pp = p.name.clone();
+        let bb=p.broker.clone();
         let data_inner = data.clone();
         children.push(thread::spawn(move || {
             let url = broker::get_url(pp.to_string());
             let client = reqwest::Client::new();
-            println!("Launching thread {} {}", pp.to_string(), url);
+            println!("[{}/{}] Launch connection {}", bb.to_string(),pp.to_string(), url);
             if let Err(err)= connect(url, |out| Client {
                 out: out,
                 name: pp.to_string(),
@@ -373,7 +395,9 @@ fn main() {
 
                 last_today_str: " ".to_string(),
             }){
-                println!("Connect errror {:?}",err);
+                println!("[{}] Connect error {:?}",pp,err);
+            }else{
+                println!("[{}] Connect ok",pp);
             };
 
         }));
