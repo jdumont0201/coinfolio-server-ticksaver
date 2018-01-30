@@ -298,7 +298,7 @@ struct Pair{
     broker :String
 }
 fn main() {
-    println!("Coinamics Server Websockets");
+    println!("Coinamics Server Tick saver");
     let mut children = vec![];
     let PAIRS=getPairsFromArgs();
     let nb = PAIRS.len();
