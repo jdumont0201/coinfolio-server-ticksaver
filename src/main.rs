@@ -13,7 +13,6 @@ extern crate reqwest;
 extern crate serde_derive;
 extern crate chrono;
 
-
 use std::sync::{Arc, Mutex};
 use std::rc::Rc;
 use std::cell::Cell;
@@ -25,9 +24,7 @@ use std::thread;
 use chrono::prelude::*;
 use chrono::{DateTime, TimeZone, NaiveDateTime, Utc};
 
-static WRITE_ON_DISK: bool = false;
-static SEND_TO_DB: bool = true;
-
+static SAVE_1M_TICK:bool=false;
 mod broker {
 
 
@@ -269,7 +266,7 @@ impl Handler for Client {
         let mut v: broker::ParsedBrokerMessage = serde_json::from_str(m).unwrap();
         let tick = v.get_tick();
         self.save_tick(&tick);
-        if v.k.x {//isfinal
+        if v.k.x && SAVE_1M_TICK{//isfinal
             let mut ohlc = v.get_generic_OHLC();
             self.save_1m(&ohlc);
         }
@@ -345,7 +342,6 @@ fn main() {
                 current_ts: 0,
                 old_ts: 0,
                 client: client.clone(),
- //               writer: None,
                 last_today_str: " ".to_string(),
             }){
                 println!("[{}] Connect error {:?}",pp,err);
